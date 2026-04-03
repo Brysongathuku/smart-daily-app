@@ -3,7 +3,7 @@ class ApiConfig {
   // Run this command first: adb reverse tcp:8081 tcp:8081
   // This creates a tunnel from emulator to your computer
 
-  static const String baseUrl = 'http://localhost:8081';
+  static const String baseUrl = 'https://milkapi.onrender.com';
 
   // Alternative if adb reverse doesn't work:
   // 1. Bind backend to 0.0.0.0 (not just 127.0.0.1)

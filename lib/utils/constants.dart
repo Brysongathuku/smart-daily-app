@@ -4,8 +4,8 @@ class AppConstants {
   // App Name
   static const String appName = 'Smart Dairy';
 
-  // ✅ API Base URL
-  static const String baseUrl = 'http://localhost:8081'; // Change port if different
+  // ✅ API Base URLx
+  static const String baseUrl = 'https://milkapi.onrender.com';
 
   // Colors
   static const Color primaryColor = Color(0xFF2E7D32);
@@ -45,6 +45,22 @@ class AppConstants {
 
   // Farm Sizes (for dropdown)
   static const List<String> farmSizes = [
+    '1 acre',
+    '2 acres',
+    '3 acres',
+    '4 acres',
+    '5 acres',
+    '6 acres',
+    '7 acres',
+    '8 acres',
+    '9 acres',
+    '10 acres',
+    '15 acres',
+    '20 acres',
+    '25 acres',
+    '30 acres',
+    '50 acres',
+    '100 acres',
     'Small (< 5 acres)',
     'Medium (5-20 acres)',
     'Large (> 20 acres)',
@@ -70,9 +86,8 @@ void showSnackBar(
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
       content: Text(message),
-      backgroundColor: isError
-          ? AppConstants.errorColor
-          : AppConstants.successColor,
+      backgroundColor:
+          isError ? AppConstants.errorColor : AppConstants.successColor,
       duration: const Duration(seconds: 3),
       behavior: SnackBarBehavior.floating,
       margin: const EdgeInsets.all(16),

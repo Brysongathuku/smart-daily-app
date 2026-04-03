@@ -16,6 +16,7 @@ class MilkCollectionModel {
   final String? disputeReason;
   final String? createdAt;
   final String? updatedAt;
+  final bool? smsDelivered;
 
   MilkCollectionModel({
     this.milkID,
@@ -35,6 +36,7 @@ class MilkCollectionModel {
     this.disputeReason,
     this.createdAt,
     this.updatedAt,
+    this.smsDelivered,
   });
 
   factory MilkCollectionModel.fromJson(Map<String, dynamic> json) {
@@ -63,6 +65,7 @@ class MilkCollectionModel {
       disputeReason: json['dispute_reason'] ?? json['disputeReason'],
       createdAt: json['created_at'] ?? json['createdAt'],
       updatedAt: json['updated_at'] ?? json['updatedAt'],
+      smsDelivered: json['sms_delivered'] ?? json['smsDelivered'],
     );
   }
 
@@ -102,7 +105,8 @@ class CreateMilkCollectionRequest {
   final double? fatContent;
   final double? temperature;
   final String? notes;
-  final String collectionDate; // ── Added ──
+  final String collectionDate;
+  final String? collectionTime; // ← ADD as field
 
   CreateMilkCollectionRequest({
     required this.farmerID,
@@ -111,7 +115,8 @@ class CreateMilkCollectionRequest {
     this.fatContent,
     this.temperature,
     this.notes,
-    required this.collectionDate, // ── Added ──
+    required this.collectionDate,
+    this.collectionTime, // ← ADD as optional named param
   });
 
   Map<String, dynamic> toJson() {
@@ -122,7 +127,8 @@ class CreateMilkCollectionRequest {
       if (fatContent != null) 'fatContent': fatContent,
       if (temperature != null) 'temperature': temperature,
       if (notes != null) 'notes': notes,
-      'collectionDate': collectionDate, // ── Added ──
+      'collectionDate': collectionDate,
+      if (collectionTime != null) 'collectionTime': collectionTime,
     };
   }
 }

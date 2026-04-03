@@ -8,26 +8,38 @@ class MilkCollectionProvider with ChangeNotifier {
   List<MilkCollectionModel> _collections = [];
   bool _isLoading = false;
   String? _errorMessage;
-  int? _lastCreatedMilkID; // ← tracks the last created milk record's ID
+  int? _lastCreatedMilkID;
+  bool? _lastSmsDelivered;
 
   List<MilkCollectionModel> get collections => _collections;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
   int? get lastCreatedMilkID => _lastCreatedMilkID;
+  bool? get lastSmsDelivered => _lastSmsDelivered;
 
-  void _setLoading(bool value) {
-    _isLoading = value;
+  void _setLoading(bool v) {
+    _isLoading = v;
     notifyListeners();
   }
 
-  void _setError(String? message) {
-    _errorMessage = message;
+  void _setError(String? m) {
+    _errorMessage = m;
     notifyListeners();
   }
 
   void clearError() {
     _errorMessage = null;
     notifyListeners();
+  }
+
+  // ── How many collections does this farmer have TODAY ──────────────────────
+  int getTodayCollectionCount(int farmerID) {
+    final today = DateTime.now();
+    final todayStr =
+        '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+    return _collections
+        .where((c) => c.farmerID == farmerID && c.collectionDate == todayStr)
+        .length;
   }
 
   // ── Create milk collection ────────────────────────────────────────────────
@@ -37,14 +49,10 @@ class MilkCollectionProvider with ChangeNotifier {
   ) async {
     _setLoading(true);
     _setError(null);
-
     try {
       final collection = await _service.createMilkCollection(request, token);
-
-      // Capture the new milk ID so feeding provider can link to it
-      _lastCreatedMilkID =
-          collection.milkID; // ← uses milkID from MilkCollectionModel
-
+      _lastCreatedMilkID = collection.milkID;
+      _lastSmsDelivered = collection.smsDelivered;
       _collections.insert(0, collection);
       _setLoading(false);
       notifyListeners();
@@ -60,7 +68,6 @@ class MilkCollectionProvider with ChangeNotifier {
   Future<void> getAllCollections(String token) async {
     _setLoading(true);
     _setError(null);
-
     try {
       _collections = await _service.getAllCollections(token);
       _setLoading(false);
@@ -75,7 +82,6 @@ class MilkCollectionProvider with ChangeNotifier {
   Future<void> getCollectionsByFarmer(int farmerID, String token) async {
     _setLoading(true);
     _setError(null);
-
     try {
       _collections = await _service.getCollectionsByFarmer(farmerID, token);
       _setLoading(false);
@@ -90,7 +96,6 @@ class MilkCollectionProvider with ChangeNotifier {
   Future<void> getCollectionsByCollector(int collectorID, String token) async {
     _setLoading(true);
     _setError(null);
-
     try {
       _collections =
           await _service.getCollectionsByCollector(collectorID, token);
@@ -110,13 +115,9 @@ class MilkCollectionProvider with ChangeNotifier {
   ) async {
     _setLoading(true);
     _setError(null);
-
     try {
-      _collections = await _service.getCollectionsByDateRange(
-        startDate,
-        endDate,
-        token,
-      );
+      _collections =
+          await _service.getCollectionsByDateRange(startDate, endDate, token);
       _setLoading(false);
       notifyListeners();
     } catch (e) {

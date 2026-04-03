@@ -7,12 +7,11 @@ class UserModel {
   final String? contactPhone;
   final String? address;
   final String? imageUrl;
-
-  // Farmer-specific fields
   final String? farmLocation;
   final String? farmSize;
   final int? numberOfCows;
-  final String? cowBreed; // ← NEW: comma-separated e.g. "Friesian, Ayrshire"
+  final String? cowBreed;
+  final int unreadNotifications; // ← NEW
 
   UserModel({
     required this.userId,
@@ -26,7 +25,8 @@ class UserModel {
     this.farmLocation,
     this.farmSize,
     this.numberOfCows,
-    this.cowBreed, // ← NEW
+    this.cowBreed,
+    this.unreadNotifications = 0, // ← NEW
   });
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
@@ -42,7 +42,9 @@ class UserModel {
       farmLocation: json['farm_location'] ?? json['farmLocation'],
       farmSize: json['farm_size'] ?? json['farmSize'],
       numberOfCows: json['number_of_cows'] ?? json['numberOfCows'],
-      cowBreed: json['cow_breed'] ?? json['cowBreed'], // ← NEW
+      cowBreed: json['cow_breed'] ?? json['cowBreed'],
+      unreadNotifications: // ← NEW
+          json['unread_notifications'] ?? json['unreadNotifications'] ?? 0,
     );
   }
 
@@ -59,7 +61,8 @@ class UserModel {
       'farm_location': farmLocation,
       'farm_size': farmSize,
       'number_of_cows': numberOfCows,
-      'cow_breed': cowBreed, // ← NEW
+      'cow_breed': cowBreed,
+      'unread_notifications': unreadNotifications, // ← NEW
     };
   }
 
@@ -67,13 +70,11 @@ class UserModel {
   bool get isFarmer => role == 'user';
   bool get isAdmin => role == 'admin';
 
-  // ── Helper: breeds as a clean list ────────────────────────────────────────
   List<String> get cowBreedList {
     if (cowBreed == null || cowBreed!.trim().isEmpty) return [];
     return cowBreed!.split(',').map((b) => b.trim()).toList();
   }
 
-  // ── Helper: display string ─────────────────────────────────────────────────
   String get cowBreedDisplay {
     if (cowBreedList.isEmpty) return 'Not specified';
     return cowBreedList.join(' + ');

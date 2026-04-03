@@ -21,7 +21,7 @@ class GeminiService {
 
     if (response.statusCode == 200) {
       final json = jsonDecode(response.body);
-      return RecommendationModel.fromJson(json['data']);
+      return RecommendationModel.fromJson(json);
     } else {
       final json = jsonDecode(response.body);
       final message = json['message'] ?? 'Failed to get recommendations';

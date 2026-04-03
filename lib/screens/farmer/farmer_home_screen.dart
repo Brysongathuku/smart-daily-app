@@ -2,20 +2,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-import '../../models/weather_model.dart';
+
 import '../../providers/auth_provider.dart';
 import '../../providers/milk_collection_provider.dart';
+import '../../providers/notification_provider.dart';
 import '../../providers/weather_provider.dart';
 import '../../utils/constants.dart';
 import '../auth/login_screen.dart';
 import 'ai_recommendations_screen.dart';
+import 'farmer_analytics_screen.dart';
 import 'farmer_milk_collections_screen.dart';
+import 'farmer_notifications_screen.dart';
 import 'farmer_profile_screen.dart';
 import 'farmer_support_screen.dart';
 
-// ──────────────────────────────────────────────────────────────────────────
-//  DESIGN TOKENS
-// ──────────────────────────────────────────────────────────────────────────
+// ── Design tokens ──────────────────────────────────────────────────────────
 const _bg = Color(0xFFF8FAFC);
 const _white = Color(0xFFFFFFFF);
 const _green = Color(0xFF16A34A);
@@ -50,10 +51,12 @@ class _FarmerHomeScreenState extends State<FarmerHomeScreen>
     _fadeCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 600));
     _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
+
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await Provider.of<AuthProvider>(context, listen: false).loadSavedUser();
       await _loadWalletData();
       await _loadWeather();
+      _startNotificationPolling();
       _fadeCtrl.forward();
     });
   }
@@ -61,7 +64,18 @@ class _FarmerHomeScreenState extends State<FarmerHomeScreen>
   @override
   void dispose() {
     _fadeCtrl.dispose();
+    Provider.of<NotificationProvider>(context, listen: false).stopPolling();
     super.dispose();
+  }
+
+  void _startNotificationPolling() {
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    if (auth.currentUser != null &&
+        auth.token != null &&
+        auth.currentUser!.isFarmer) {
+      Provider.of<NotificationProvider>(context, listen: false)
+          .startPolling(auth.currentUser!.userId, auth.token!);
+    }
   }
 
   Future<void> _loadWalletData() async {
@@ -101,13 +115,9 @@ class _FarmerHomeScreenState extends State<FarmerHomeScreen>
   Future<void> _loadWeather() async {
     try {
       final auth = Provider.of<AuthProvider>(context, listen: false);
-      final weatherProvider =
-          Provider.of<WeatherProvider>(context, listen: false);
+      final wp = Provider.of<WeatherProvider>(context, listen: false);
       if (auth.token != null && auth.currentUser != null) {
-        await weatherProvider.getCurrentWeather(
-          auth.currentUser!.userId,
-          auth.token!,
-        );
+        await wp.getCurrentWeather(auth.currentUser!.userId, auth.token!);
       }
     } catch (_) {}
   }
@@ -146,6 +156,8 @@ class _FarmerHomeScreenState extends State<FarmerHomeScreen>
       ),
     );
     if (ok == true) {
+      // ignore: use_build_context_synchronously
+      Provider.of<NotificationProvider>(context, listen: false).stopPolling();
       await Provider.of<AuthProvider>(context, listen: false).logout();
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
@@ -186,7 +198,64 @@ class _FarmerHomeScreenState extends State<FarmerHomeScreen>
           ),
         ),
         actions: [
-          _iconBtn(Icons.notifications_none_rounded, () {}),
+          // ── Notification bell (UNCHANGED) ───────────────────────────
+          Consumer<NotificationProvider>(
+            builder: (context, notif, _) => GestureDetector(
+              onTap: () async {
+                final authP = Provider.of<AuthProvider>(context, listen: false);
+                if (authP.currentUser == null || authP.token == null) return;
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const FarmerNotificationsScreen(),
+                  ),
+                );
+              },
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    margin: const EdgeInsets.symmetric(vertical: 8),
+                    decoration: BoxDecoration(
+                      color: _white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: _border),
+                    ),
+                    child: const Icon(Icons.notifications_none_rounded,
+                        color: _mid, size: 18),
+                  ),
+                  if (notif.hasUnread)
+                    Positioned(
+                      top: 4,
+                      right: 4,
+                      child: Container(
+                        width: 16,
+                        height: 16,
+                        decoration: BoxDecoration(
+                          color: Colors.redAccent,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: _white, width: 1.5),
+                        ),
+                        child: Center(
+                          child: Text(
+                            notif.unreadCount > 9
+                                ? '9+'
+                                : '${notif.unreadCount}',
+                            style: const TextStyle(
+                              fontSize: 7,
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
           const SizedBox(width: 4),
           GestureDetector(
             onTap: () => Navigator.push(context,
@@ -215,10 +284,10 @@ class _FarmerHomeScreenState extends State<FarmerHomeScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _Greeting(
-                    imageUrl: imageUrl, firstName: user?.firstName ?? 'Farmer'),
-
+                  imageUrl: imageUrl,
+                  firstName: user?.firstName ?? 'Farmer',
+                ),
                 const SizedBox(height: 20),
-
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: _WalletCard(
@@ -234,27 +303,26 @@ class _FarmerHomeScreenState extends State<FarmerHomeScreen>
                     fmtShort: fmtShort,
                   ),
                 ),
-
                 const SizedBox(height: 14),
+
+                // ── NEW: notification banner below wallet ──────────────
+                _FarmerNotificationBanner(),
+                const SizedBox(height: 2),
+                // ─────────────────────────────────────────────────────
 
                 if (user != null)
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: _FarmStrip(user: user),
                   ),
-
-                // ── Weather widget ─────────────────────────────────────────
                 const SizedBox(height: 14),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: _WeatherWidget(),
                 ),
-
                 const SizedBox(height: 24),
-
                 _sectionLabel('QUICK ACTIONS'),
                 const SizedBox(height: 12),
-
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: _ActionGrid(
@@ -280,6 +348,16 @@ class _FarmerHomeScreenState extends State<FarmerHomeScreen>
                             MaterialPageRoute(
                                 builder: (_) =>
                                     const AiRecommendationsScreen())),
+                      ),
+                      _ActionItem(
+                        label: 'Analytics',
+                        icon: Icons.bar_chart_rounded,
+                        iconBg: const Color(0xFFFFF1F2),
+                        iconColor: const Color(0xFFE11D48),
+                        onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const FarmerAnalyticsScreen())),
                       ),
                       _ActionItem(
                         label: 'Payments',
@@ -312,11 +390,8 @@ class _FarmerHomeScreenState extends State<FarmerHomeScreen>
                     ],
                   ),
                 ),
-
                 const SizedBox(height: 24),
-
                 _RecentCollections(context: context),
-
                 const SizedBox(height: 40),
               ],
             ),
@@ -366,17 +441,133 @@ class _FarmerHomeScreenState extends State<FarmerHomeScreen>
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-//  WEATHER WIDGET
+//  FARMER NOTIFICATION BANNER  (NEW)
+//  Sits between the wallet card and farm strip.
+//  Shows when unreadCount > 0. Taps → FarmerNotificationsScreen.
+//  Does NOT touch existing NotificationProvider logic.
+// ══════════════════════════════════════════════════════════════════════════
+
+class _FarmerNotificationBanner extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<NotificationProvider>(
+      builder: (context, notif, _) {
+        if (!notif.hasUnread) return const SizedBox.shrink();
+
+        final count = notif.unreadCount;
+        final label = count == 1
+            ? '1 new collection recorded'
+            : '$count new collections recorded';
+
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+          child: GestureDetector(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => const FarmerNotificationsScreen()),
+            ),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFF0FDF4), Color(0xFFDCFCE7)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: _green.withOpacity(0.3)),
+                boxShadow: [
+                  BoxShadow(
+                    color: _green.withOpacity(0.08),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Stack(clipBehavior: Clip.none, children: [
+                    Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: _green.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Center(
+                        child: Icon(Icons.notifications_active_rounded,
+                            color: _green, size: 20),
+                      ),
+                    ),
+                    Positioned(
+                      top: -4,
+                      right: -4,
+                      child: Container(
+                        width: 16,
+                        height: 16,
+                        decoration: BoxDecoration(
+                          color: Colors.redAccent,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                              color: const Color(0xFFF0FDF4), width: 1.5),
+                        ),
+                        child: Center(
+                          child: Text(
+                            count > 9 ? '9+' : '$count',
+                            style: const TextStyle(
+                                fontSize: 7,
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ]),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'New Notification',
+                          style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: _dark),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          label,
+                          style: const TextStyle(fontSize: 12, color: _green),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.arrow_forward_ios_rounded,
+                      size: 13, color: _green),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  Everything below is UNCHANGED from your original file
 // ══════════════════════════════════════════════════════════════════════════
 
 class _WeatherWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    final weatherProvider = Provider.of<WeatherProvider>(context);
-    final weather = weatherProvider.currentWeather;
-    final isLoading = weatherProvider.isLoading;
+    final wp = Provider.of<WeatherProvider>(context);
+    final weather = wp.currentWeather;
+    final loading = wp.isLoading;
 
-    if (isLoading && weather == null) {
+    if (loading && weather == null) {
       return Container(
         decoration: BoxDecoration(
           color: _white,
@@ -384,18 +575,16 @@ class _WeatherWidget extends StatelessWidget {
           border: Border.all(color: _border),
         ),
         padding: const EdgeInsets.all(16),
-        child: const Row(
-          children: [
-            SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(color: _green, strokeWidth: 2),
-            ),
-            SizedBox(width: 12),
-            Text('Loading weather...',
-                style: TextStyle(fontSize: 12, color: _light)),
-          ],
-        ),
+        child: const Row(children: [
+          SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(color: _green, strokeWidth: 2),
+          ),
+          SizedBox(width: 12),
+          Text('Loading weather...',
+              style: TextStyle(fontSize: 12, color: _light)),
+        ]),
       );
     }
 
@@ -407,23 +596,18 @@ class _WeatherWidget extends StatelessWidget {
           border: Border.all(color: _border),
         ),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        child: Row(
-          children: [
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: _greenLight,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child:
-                  const Icon(Icons.cloud_off_rounded, color: _green, size: 16),
-            ),
-            const SizedBox(width: 12),
-            const Text('Weather unavailable',
-                style: TextStyle(fontSize: 12, color: _light)),
-          ],
-        ),
+        child: Row(children: [
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+                color: _greenLight, borderRadius: BorderRadius.circular(10)),
+            child: const Icon(Icons.cloud_off_rounded, color: _green, size: 16),
+          ),
+          const SizedBox(width: 12),
+          const Text('Weather unavailable',
+              style: TextStyle(fontSize: 12, color: _light)),
+        ]),
       );
     }
 
@@ -438,99 +622,72 @@ class _WeatherWidget extends StatelessWidget {
         border: Border.all(color: Colors.blue.withOpacity(0.15)),
       ),
       padding: const EdgeInsets.all(14),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Text(weather.weatherEmoji, style: const TextStyle(fontSize: 32)),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(weather.conditionDisplay,
-                        style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
-                            color: _dark)),
-                    const SizedBox(height: 2),
-                    Text(
-                      weather.location.isNotEmpty
-                          ? weather.location
-                          : 'Your farm',
-                      style: const TextStyle(fontSize: 11, color: _light),
-                    ),
-                  ],
-                ),
+      child: Column(children: [
+        Row(children: [
+          Text(weather.weatherEmoji, style: const TextStyle(fontSize: 32)),
+          const SizedBox(width: 12),
+          Expanded(
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(weather.conditionDisplay,
+                  style: const TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.bold, color: _dark)),
+              const SizedBox(height: 2),
+              Text(
+                weather.location.isNotEmpty ? weather.location : 'Your farm',
+                style: const TextStyle(fontSize: 11, color: _light),
               ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(weather.tempDisplay,
-                      style: const TextStyle(
-                          fontSize: 26,
-                          fontWeight: FontWeight.w800,
-                          color: _dark)),
-                  Text(DateFormat('dd MMM').format(DateTime.now()),
-                      style: const TextStyle(fontSize: 10, color: _light)),
-                ],
-              ),
-            ],
+            ]),
           ),
-          const SizedBox(height: 12),
-          Divider(color: Colors.blue.withOpacity(0.15), height: 1),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              _weatherStat(Icons.water_drop_rounded, Colors.blue,
-                  weather.humidityDisplay, 'Humidity'),
-              _weatherStat(Icons.grain_rounded, Colors.indigo,
-                  weather.rainfallDisplay, 'Rainfall'),
-              _weatherStat(
-                  Icons.air_rounded, Colors.cyan, weather.windDisplay, 'Wind'),
-            ],
-          ),
-        ],
-      ),
+          Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            Text(weather.tempDisplay,
+                style: const TextStyle(
+                    fontSize: 26, fontWeight: FontWeight.w800, color: _dark)),
+            Text(DateFormat('dd MMM').format(DateTime.now()),
+                style: const TextStyle(fontSize: 10, color: _light)),
+          ]),
+        ]),
+        const SizedBox(height: 12),
+        Divider(color: Colors.blue.withOpacity(0.15), height: 1),
+        const SizedBox(height: 12),
+        Row(children: [
+          _weatherStat(Icons.water_drop_rounded, Colors.blue,
+              weather.humidityDisplay, 'Humidity'),
+          _weatherStat(Icons.grain_rounded, Colors.indigo,
+              weather.rainfallDisplay, 'Rainfall'),
+          _weatherStat(
+              Icons.air_rounded, Colors.cyan, weather.windDisplay, 'Wind'),
+        ]),
+      ]),
     );
   }
 
   Widget _weatherStat(IconData icon, Color color, String value, String label) {
     return Expanded(
-      child: Row(
-        children: [
-          Container(
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(icon, color: color, size: 14),
+      child: Row(children: [
+        Container(
+          width: 28,
+          height: 28,
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
           ),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(value,
-                    style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: _dark)),
-                Text(label, style: const TextStyle(fontSize: 9, color: _light)),
-              ],
-            ),
-          ),
-        ],
-      ),
+          child: Icon(icon, color: color, size: 14),
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(value,
+                style: const TextStyle(
+                    fontSize: 12, fontWeight: FontWeight.bold, color: _dark)),
+            Text(label, style: const TextStyle(fontSize: 9, color: _light)),
+          ]),
+        ),
+      ]),
     );
   }
 }
-
-// ══════════════════════════════════════════════════════════════════════════
-//  SUB-WIDGETS
-// ══════════════════════════════════════════════════════════════════════════
 
 class _Greeting extends StatelessWidget {
   final String? imageUrl;
@@ -540,7 +697,6 @@ class _Greeting extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final date = DateFormat('EEEE, dd MMMM yyyy').format(DateTime.now());
-
     return Container(
       color: _white,
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
@@ -675,70 +831,76 @@ class _WalletCard extends StatelessWidget {
                   child: CircularProgressIndicator(
                       color: Colors.white, strokeWidth: 2),
                 ))
-              : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('MY WALLET',
-                          style: TextStyle(
-                              fontSize: 9,
-                              letterSpacing: 2.5,
-                              fontWeight: FontWeight.w700,
-                              color: Color(0xBBFFFFFF))),
-                      GestureDetector(
-                        onTap: onToggle,
-                        child: Container(
-                          width: 28,
-                          height: 28,
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.15),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Icon(
-                            visible
-                                ? Icons.visibility_rounded
-                                : Icons.visibility_off_rounded,
-                            color: Colors.white,
-                            size: 14,
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('MY WALLET',
+                            style: TextStyle(
+                                fontSize: 9,
+                                letterSpacing: 2.5,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xBBFFFFFF))),
+                        GestureDetector(
+                          onTap: onToggle,
+                          child: Container(
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(
+                              visible
+                                  ? Icons.visibility_rounded
+                                  : Icons.visibility_off_rounded,
+                              color: Colors.white,
+                              size: 14,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  const Text('Total Earnings',
-                      style: TextStyle(
-                          fontSize: 11,
-                          color: Color(0x99FFFFFF),
-                          fontWeight: FontWeight.w500)),
-                  const SizedBox(height: 5),
-                  Text(
-                    visible ? 'KSh ${fmt.format(totalEarnings)}' : 'KSh ••••••',
-                    style: const TextStyle(
-                        fontSize: 30,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                        letterSpacing: -1.0),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text('Total accumulated earnings',
-                      style: TextStyle(fontSize: 11, color: Color(0x80FFFFFF))),
-                  const SizedBox(height: 16),
-                  Row(children: [
-                    _chip(
-                      label: 'This Month',
-                      value: visible
-                          ? 'KSh ${fmtShort.format(monthEarnings)}'
-                          : 'KSh ••••',
+                      ],
                     ),
-                    const SizedBox(width: 8),
-                    _chip(
-                        label: 'Litres',
-                        value: '${totalLiters.toStringAsFixed(1)}L'),
-                    const SizedBox(width: 8),
-                    _chip(label: 'Collections', value: '$collections'),
-                  ]),
-                ]),
+                    const SizedBox(height: 16),
+                    const Text('Total Earnings',
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: Color(0x99FFFFFF),
+                            fontWeight: FontWeight.w500)),
+                    const SizedBox(height: 5),
+                    Text(
+                      visible
+                          ? 'KSh ${fmt.format(totalEarnings)}'
+                          : 'KSh ••••••',
+                      style: const TextStyle(
+                          fontSize: 30,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                          letterSpacing: -1.0),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text('Total accumulated earnings',
+                        style:
+                            TextStyle(fontSize: 11, color: Color(0x80FFFFFF))),
+                    const SizedBox(height: 16),
+                    Row(children: [
+                      _chip(
+                        label: 'This Month',
+                        value: visible
+                            ? 'KSh ${fmtShort.format(monthEarnings)}'
+                            : 'KSh ••••',
+                      ),
+                      const SizedBox(width: 8),
+                      _chip(
+                          label: 'Litres',
+                          value: '${totalLiters.toStringAsFixed(1)}L'),
+                      const SizedBox(width: 8),
+                      _chip(label: 'Collections', value: '$collections'),
+                    ]),
+                  ],
+                ),
         ),
       ]),
     );
@@ -912,18 +1074,18 @@ class _RecentCollections extends StatelessWidget {
     final fmt = NumberFormat('#,##0');
 
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20),
+      const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 20),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text('RECENT COLLECTIONS',
+            Text('RECENT COLLECTIONS',
                 style: TextStyle(
                     fontSize: 9,
                     letterSpacing: 2.5,
                     fontWeight: FontWeight.w700,
                     color: _light)),
-            const Text('View all',
+            Text('View all',
                 style: TextStyle(
                     fontSize: 11, color: _green, fontWeight: FontWeight.w600)),
           ],

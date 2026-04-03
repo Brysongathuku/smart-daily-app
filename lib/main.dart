@@ -12,6 +12,10 @@ import 'providers/support_ticket_provider.dart';
 import 'utils/constants.dart';
 import 'providers/weather_provider.dart';
 import 'providers/gemini_provider.dart';
+import 'providers/notification_provider.dart';
+import 'providers/admin_notification_provider.dart';
+
+// Inside MultiProvider:
 
 void main() {
   runApp(const MyApp());
@@ -33,6 +37,8 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => FeedingProvider()),
         ChangeNotifierProvider(create: (_) => WeatherProvider()),
         ChangeNotifierProvider(create: (_) => GeminiProvider()),
+        ChangeNotifierProvider(create: (_) => NotificationProvider()),
+        ChangeNotifierProvider(create: (_) => AdminNotificationProvider()),
       ],
       child: MaterialApp(
         title: AppConstants.appName,
